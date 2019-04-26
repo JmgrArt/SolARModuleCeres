@@ -18,7 +18,8 @@
 #include <iostream>
 #include <string>
 #include <vector>
-
+#include <set>
+#include <map>
 
 //#include <boost/log/core.hpp>
 
@@ -243,6 +244,121 @@ struct SolARBALoader{
     
 };
 
+void project3Dpoints(const Transform3Df pose,const CamCalibration calib,const CamDistortion dist,const std::vector<SRef<CloudPoint>>& cloud,std::vector<SRef<Point2Df>>& point2D){
+
+    //first step :  from world coordinates to camera coordinates
+    Transform3Df invPose;
+    invPose=pose.inverse();
+    point2D.clear();
+#if (_WIN64) || (_WIN32)
+        Vector3f pointInCamRef;
+#else
+        Vector4f pointInCamRef;
+#endif
+        float k1 = dist[0];
+        float k2 = dist[1];
+        float p1 = dist[2];
+        float p2 = dist[3];
+        float k3 = dist[4];
+    for (auto cld = cloud.begin();cld!=cloud.end();++cld){
+#if (_WIN64) || (_WIN32)
+        Vector3f point((*cld)->getX(), (*cld)->getY(), (*cld)->getZ());
+#else
+        Vector4f point((*cld)->getX(), (*cld)->getY(), (*cld)->getZ(),1);
+#endif
+        pointInCamRef=invPose*point;
+        if(pointInCamRef(2)>0){
+            float x=pointInCamRef(0)/pointInCamRef(2);
+            float y=pointInCamRef(1)/pointInCamRef(2);
+
+            float r2 = x * x + y * y;
+            float r4 = r2 * r2;
+            float r6 = r4 * r2;
+            float r_coeff = 1.0 + k1 * r2 + k2 * r4 + k3 * r6;
+            float xx = x * r_coeff + 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
+            float yy = y * r_coeff + 2.0 * p2 * x * y + p1 * (r2 + 2.0 * y * y);
+
+            float u = calib(0,0)*xx +calib(0,2);
+            float v = calib(1,1)*yy +calib(1,2);
+
+            SRef<Point2Df> p2d=xpcf::utils::make_shared<Point2Df> (u,v);
+
+            point2D.push_back(p2d);
+        }
+        else
+            point2D.push_back(xpcf::utils::make_shared<Point2Df> (0,0));
+    }
+}
+
+
+std::pair<double,int> getReprojectionError(SRef<Keyframe> keyFrame,SolARBALoader *ba,bool fromCloud=true){
+    double r;
+    Transform3Df pose=keyFrame->getPose();
+    std::vector<SRef<CloudPoint>> cloud;
+    std::vector<int>  indices;
+    std::vector<SRef<Point2Df>>  point2D;
+
+    if(fromCloud){
+        auto pointCloud=ba->m_points3d;
+        auto visibility=keyFrame->getVisibleMapPoints();
+        for(auto cp:pointCloud){
+            std::map<unsigned int, unsigned int> vis=cp->getVisibility();
+            auto itr_v = vis.find( keyFrame->m_idx);
+            if(itr_v!=vis.end()){
+                cloud.push_back(cp);
+                indices.push_back(itr_v->second);
+                int count=0;
+                for(std::map<unsigned int, SRef<CloudPoint>>::iterator v=visibility.begin();v!=visibility.end();++v){
+                    if(v->second==cp){
+                        count++;
+                    }
+                }
+                if(count==0){
+//                    std::cout << "cp not found \n";
+                }
+
+            }
+        }
+    }
+    else    {
+        auto visibility=keyFrame->getVisibleMapPoints();
+        for(std::map<unsigned int, SRef<CloudPoint>>::iterator v=visibility.begin();v!=visibility.end();++v){
+            auto ind=v->first;
+            auto cp=v->second;
+            indices.push_back(ind);
+            cloud.push_back(cp);
+        }
+    }
+    project3Dpoints(pose,ba->m_intrinsic,ba->m_distorsion,cloud,point2D);
+    auto keypoints=keyFrame->getKeypoints();
+    r=0;
+    int i;
+    for(i=0;i<point2D.size();++i){
+
+        SRef<Keypoint> kp = keypoints[indices[i]];
+        SRef<Point2Df> p2d = point2D[i];
+
+        double dx=p2d->getX()-kp->getX();
+        double dy=p2d->getY()-kp->getY();
+
+        r+=dx*dx+dy*dy;
+    }
+    return std::make_pair(r,point2D.size());
+
+}
+
+std::pair<double,int> getReprojectionErrorFull(const std::vector<SRef<Keyframe>>& keyFrames,SolARBALoader *ba,bool fromCloud=true){
+
+    double r=0;
+    int i=0;
+    for(auto kf:keyFrames){
+        std::pair<double,int> res=getReprojectionError(kf,ba);
+        r+=res.first;
+        i+=res.second;
+    }
+    return std::make_pair(r,i);
+}
+
 
 int run_bundle(std::string & scene){
     LOG_ADD_LOG_TO_CONSOLE();
@@ -283,21 +399,45 @@ int run_bundle(std::string & scene){
 
 
     std::vector<SRef<Keyframe>>keyframes;
-    keyframes.resize(ba->m_poses.size());
-    ba->m_descriptors.resize(ba->m_poses.size());
-    ba->m_views.resize(ba->m_poses.size());
+    std::vector<int>selectedKeyframes = {0,1,2,3,4};  // !!!! Caution : specify the selection in ascending order
+
+    keyframes.resize(selectedKeyframes.size());
+    ba->m_descriptors.resize(keyframes.size());
+    ba->m_views.resize(keyframes.size());
 
     for(unsigned int i = 0; i < keyframes.size(); ++i){
        keyframes[i] = xpcf::utils::make_shared<Keyframe>(ba->m_points2d[i],
                                                          ba->m_descriptors[i],
                                                          ba->m_views[i],
                                                          ba->m_poses[i]);
-
-
     }
 
 
-    std::vector<int>selectedKeyframes; // = {1,7};
+
+    {
+       std::set<int> kfset(selectedKeyframes.begin(),selectedKeyframes.end());
+       int countPoints=0;
+        for(auto pc : ba->m_points3d){
+            auto vis=pc->getVisibility();
+            for(auto v:vis){
+                int kf=v.first;
+                if(kfset.find(kf)!=kfset.end()){
+                    countPoints++;
+                }
+            }
+        }
+    std::cout << "nb ot points : " << countPoints << "\n";
+//    getchar();
+    }
+
+    std::vector<double> errorBefore;
+    for (auto kf:keyframes){
+            std::pair<double,int> res=getReprojectionError(kf,ba);
+            errorBefore.push_back(sqrt(res.first/res.second));
+    }
+    std::pair<double,int> resb=getReprojectionErrorFull(keyframes,ba);
+
+
     std::vector<SRef<CloudPoint>>cloud, cloud_ba;
     std::vector<Transform3Df>poses , poses_ba;
     for(unsigned i = 0; i < keyframes.size(); ++i){
@@ -314,11 +454,29 @@ int run_bundle(std::string & scene){
                                       selectedKeyframes);
 
    LOG_INFO("reprojection error final: {}",reproj_errorFinal);
-    for(auto & p: keyframes){
-        Transform3Df tt = p->getPose();
-        poses_ba.push_back(tt);
-    }
 
+
+   std::vector<double> errorAfter;
+   for (auto kf:keyframes){
+       std::pair<double,int> res=getReprojectionError(kf,ba);
+       errorAfter.push_back(sqrt(res.first/res.second));
+   }
+   std::pair<double,int> resa=getReprojectionErrorFull(keyframes,ba);
+
+   for(int i=0;i<errorBefore.size();++i){
+       std::cout << "kf : " << i << " reproj error before :" << errorBefore[i]<< " reproj error after :" << errorAfter[i] << "\n";
+   }
+
+   std::cout << "\nfull reproj error before :" << resb.first<< " full reproj error after :" << resa.first << "\n";
+   std::cout << "\nfull reproj error before :" << resb.first/resb.second<< " full reproj error after :" << resa.first/resa.second << "\n";
+
+   for(auto & p: keyframes){
+       Transform3Df tt = p->getPose();
+       poses_ba.push_back(tt);
+   }
+
+   LOG_INFO(" pose # 0 : {}",poses_ba[0].matrix());
+   LOG_INFO(" pose # 1 : {}",poses_ba[1].matrix());
     cloud_ba = ba->m_points3d;
 
     std::vector<Transform3Df>framePoses;
