@@ -48,12 +48,12 @@ namespace xpcf = org::bcom::xpcf;
 ///
 struct SolARBALoader{
     std::vector<std::vector<SRef<Keypoint>>>m_points2d;
-	std::vector<Transform3Df>m_poses;
+    std::vector<Transform3Df>m_poses;
     std::vector<SRef<CloudPoint>>m_points3d;
     std::vector<SRef<Image>> m_views;
     std::vector<SRef<DescriptorBuffer>> m_descriptors;
-	CamCalibration  m_intrinsic;
-	CamDistortion   m_distorsion;
+    CamCalibration  m_intrinsic;
+    CamDistortion   m_distorsion;
 
     bool load2DPoints(const std::string & path_measures) {
         int N;
@@ -85,7 +85,7 @@ struct SolARBALoader{
                         ox >>y;
                         m_points2d[i][j] = xpcf::utils::make_shared<Keypoint>(x,y,0.0,0.0,0.0,0.0,0);
                     }
-                }   
+                }
             }
             std::cout<<" done"<<std::endl;
             return true;
@@ -122,9 +122,9 @@ struct SolARBALoader{
             std::cout<<" done"<<std::endl;
         }
         return true;
-        
+
     }
-    
+
     bool loadIntrinsic(const std::string&path_calib){
         std::cout<<"loading intrinsics: ";
         std::ifstream ox(path_calib);
@@ -181,7 +181,7 @@ struct SolARBALoader{
         std::cout<<" done"<<std::endl;
         return true;
     }
-    
+
     void showExtrinsics()const {
         int idx = 0;
         for (const auto &p : m_poses) {
@@ -196,7 +196,7 @@ struct SolARBALoader{
             std::cout << std::endl;
         }
     }
-    
+
     void show3DPoints()const {
         int idx = 0;
         std::cout << "<3D POINTS>: " << std::endl;
@@ -213,7 +213,7 @@ struct SolARBALoader{
         }
         std::cout << std::endl;
     }
-    
+
     void show2Dpoints()const {
         std::cout << "<2D POINTS>: " << std::endl;
         for (int i = 0; i < m_points2d.size(); ++i) {
@@ -223,7 +223,7 @@ struct SolARBALoader{
             }
         }
     }
-    
+
     void  showIntrinsics()const {
         std::cout << "<INTRINSIC>: " << std::endl;
             for (int ii = 0; ii < 3; ++ii) {
@@ -233,7 +233,7 @@ struct SolARBALoader{
                 std::cout << std::endl;
             }
     }
-    
+
     void  showDistorsions()const {
         std::cout << "<DISTORSION>: " << std::endl;
             for (int ii = 0; ii < 5; ++ii) {
@@ -241,7 +241,7 @@ struct SolARBALoader{
             }
             std::cout << std::endl;
     }
-    
+
 };
 
 void project3Dpoints(const Transform3Df pose,const CamCalibration calib,const CamDistortion dist,const std::vector<SRef<CloudPoint>>& cloud,std::vector<SRef<Point2Df>>& point2D){
@@ -347,16 +347,20 @@ std::pair<double,int> getReprojectionError(SRef<Keyframe> keyFrame,SolARBALoader
 
 }
 
-std::pair<double,int> getReprojectionErrorFull(const std::vector<SRef<Keyframe>>& keyFrames,SolARBALoader *ba,bool fromCloud=true){
+std::pair<double,int> getReprojectionErrorFull(const std::vector<SRef<Keyframe>>& keyFrames,SolARBALoader *ba,std::vector<int>& selectedKeyframes){
 
     double r=0;
     int i=0;
-    for(auto kf:keyFrames){
-        std::pair<double,int> res=getReprojectionError(kf,ba);
-        r+=res.first;
-        i+=res.second;
+    for(auto idx:selectedKeyframes){
+        for(auto kf:keyFrames){
+               if(kf->m_idx==idx){
+                    std::pair<double,int> res=getReprojectionError(kf,ba);
+                    r+=res.first;
+                    i+=res.second;
+               }
+        }
     }
-    return std::make_pair(r,i);
+    return std::make_pair(0.5*r,i);
 }
 
 
@@ -399,9 +403,9 @@ int run_bundle(std::string & scene){
 
 
     std::vector<SRef<Keyframe>>keyframes;
-    std::vector<int>selectedKeyframes = {0,1,2,3,4};  // !!!! Caution : specify the selection in ascending order
+    std::vector<int>selectedKeyframes = {1,2,3,4,5,6,7,8,9,10,11,12,13,14};  // !!!! Caution : specify the selection in ascending order
 
-    keyframes.resize(selectedKeyframes.size());
+    keyframes.resize(ba->m_poses.size());
     ba->m_descriptors.resize(keyframes.size());
     ba->m_views.resize(keyframes.size());
 
@@ -435,7 +439,7 @@ int run_bundle(std::string & scene){
             std::pair<double,int> res=getReprojectionError(kf,ba);
             errorBefore.push_back(sqrt(res.first/res.second));
     }
-    std::pair<double,int> resb=getReprojectionErrorFull(keyframes,ba);
+    std::pair<double,int> resb=getReprojectionErrorFull(keyframes,ba,selectedKeyframes);
 
 
     std::vector<SRef<CloudPoint>>cloud, cloud_ba;
@@ -461,7 +465,7 @@ int run_bundle(std::string & scene){
        std::pair<double,int> res=getReprojectionError(kf,ba);
        errorAfter.push_back(sqrt(res.first/res.second));
    }
-   std::pair<double,int> resa=getReprojectionErrorFull(keyframes,ba);
+   std::pair<double,int> resa=getReprojectionErrorFull(keyframes,ba,selectedKeyframes);
 
    for(int i=0;i<errorBefore.size();++i){
        std::cout << "kf : " << i << " reproj error before :" << errorBefore[i]<< " reproj error after :" << errorAfter[i] << "\n";
