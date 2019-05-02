@@ -172,8 +172,8 @@ namespace SolAR {
 
                 void SolARBundlerCeres::initCeresProblem(){
                     m_options.use_nonmonotonic_steps = true;
-                    m_options.preconditioner_type = ceres::SCHUR_JACOBI;
-                    m_options.linear_solver_type = ceres::ITERATIVE_SCHUR;
+                    m_options.preconditioner_type = ceres::SCHUR_JACOBI;      
+                    m_options.linear_solver_type = ceres::ITERATIVE_SCHUR;                                        
                     m_options.use_inner_iterations = true;
                     m_options.max_num_iterations = m_iterationsNo;
                     m_options.minimizer_progress_to_stdout = false;
@@ -185,68 +185,58 @@ namespace SolAR {
                                                          const std::vector<int>&selectedKeyframes){
 
 
+
                     std::vector<ceresObserv>observations_temp;
                     int mapToBundleSize = 0;
-                    LOG_DEBUG("#### LOCAL BUNDLER");
-                    int minVisibleViews  = 2;
-                    LOG_INFO ("size of map : {}",mapToAdjust.size())
-
-                    if(selectedKeyframes.size()){
-                         for(int i = 0; i < mapToAdjust.size(); ++i){
-                            std::map<unsigned int, unsigned int> visibility = mapToAdjust[i]->getVisibility();
-                            map<unsigned int, unsigned int>::iterator it;
-                            ++ mapToBundleSize;
-                            for (std::map<unsigned int, unsigned int>::iterator it = visibility.begin(); it != visibility.end(); ++it){
-                                int idxCam0 = it->first;
-                                for(auto idx:selectedKeyframes){
-                                    for (unsigned int c = 0; c < framesToAdjust.size(); ++c){ // seen by at least two cameras...!
-                                        auto kf=framesToAdjust[c];
-                                        auto kps=kf->getKeypoints();
-                                        int idxCam1 = kf->m_idx;
-                                        if(kf->m_idx!=idx)
-                                            continue;
-                                        if(idxCam0 == idxCam1){
-                                            int idxPoint = i;
-                                            int idxLoc = it->second;
-                                            auto kp=kps[idxLoc];
-                                            auto x=kp->getX();
-                                            auto y=kp->getY();
-                                            ceresObserv v;
-                                            v.oPt  = Point2Df(x,y);
-                                            v.cIdx = c;
-                                            v.pIdx = idxPoint;
-                                            observations_temp.push_back(v);
-                                        }
-                                     }
-                                }
-                            }
-                        }
-                    }
-                    else {
+                    if(selectedKeyframes.size()> 0){
+                        LOG_DEBUG("#### LOCAL BUNDLER");
+                        int minVisibleViews  = 2;
                         for(int i = 0; i < mapToAdjust.size(); ++i){
                             std::map<unsigned int, unsigned int> visibility = mapToAdjust[i]->getVisibility();
                             map<unsigned int, unsigned int>::iterator it;
+                            int minViz = 0;
+                                for (unsigned int c = 0; c < selectedKeyframes.size(); ++c){
+                                    it =  visibility.find(selectedKeyframes[c]);
+                                    if(it!=visibility.end()) ++ minViz;
+                               }
+ //                           if(minViz<minVisibleViews)continue;
                             ++ mapToBundleSize;
                             for (std::map<unsigned int, unsigned int>::iterator it = visibility.begin(); it != visibility.end(); ++it){
                                 int idxCam0 = it->first;
-                                for (unsigned int c = 0; c < framesToAdjust.size(); ++c){ // seen by at least two cameras...!
-                                    auto kf=framesToAdjust[c];
-                                    auto kps=kf->getKeypoints();
-                                    int idxCam1 = kf->m_idx;
+                                for (unsigned int c = 0; c < selectedKeyframes.size(); ++c){ // seen by at least two cameras...!
+                                    int idxCam1 = selectedKeyframes[c];
                                     if(idxCam0 == idxCam1){
                                         int idxPoint = i;
                                         int idxLoc = it->second;
-                                        auto kp=kps[idxLoc];
-                                        auto x=kp->getX();
-                                        auto y=kp->getY();
                                         ceresObserv v;
-                                        v.oPt  = Point2Df(x,y);
-                                        v.cIdx = c;
+                                        v.oPt  = Point2Df(framesToAdjust[idxCam0]->getKeypoints()[idxLoc]->getX(),
+                                                          framesToAdjust[idxCam0]->getKeypoints()[idxLoc]->getY());
+                                        v.cIdx = idxCam0;
                                         v.pIdx = idxPoint;
                                         observations_temp.push_back(v);
+
                                     }
                                  }
                             }
+                        }
+                    }
+                    else{
+                        for(int i = 0; i < mapToAdjust.size(); ++i){
+                            std::map<unsigned int, unsigned int> visibility = mapToAdjust[i]->getVisibility();
+                            ++mapToBundleSize;
+                            for (std::map<unsigned int, unsigned int>::iterator it = visibility.begin(); it != visibility.end(); ++it){
+                                if(it->second  != -1){
+                                    ceresObserv v;
+                                    int idxCam = it->first;
+                                    int idxLoc = it->second;
+                                    int idxPoint = i;
+                                    v.oPt  = Point2Df(framesToAdjust[idxCam]->getKeypoints()[idxLoc]->getX(),
+                                                      framesToAdjust[idxCam]->getKeypoints()[idxLoc]->getY());
+                                    v.cIdx = idxCam;
+                                    v.pIdx = idxPoint;
+                                    observations_temp.push_back(v);
+                                }
+                             }
                         }
                     }
 
@@ -310,7 +300,7 @@ namespace SolAR {
                             m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 0] = K(0, 0);
                             m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 1] = K(1, 1);
                             m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 2] = K(0, 2);
-                            m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 3] = K(1, 2);
+                            m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 3] = K(1, 2);                            
                             m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 4] = D(0);
                             m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 5] = D(1);
                             m_parameters[INT_DIM*i + m_camerasNo * EXT_DIM + 6] = D(2);
