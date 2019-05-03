@@ -246,19 +246,19 @@ namespace SolAR {
                     m_pointsNo       = mapToAdjust.size();
 
                     if(m_observations)
-                        delete(m_observations);
+                        delete[] m_observations;
                     m_observations = new double[OBSERV_DIM * m_observationsNo];
 
                     if(m_pointIndex)
-                        delete(m_pointIndex);
+                        delete[] m_pointIndex;
                     m_pointIndex     = new int[m_observationsNo];
 
                     if(m_extrinsicIndex)
-                        delete(m_extrinsicIndex);
+                        delete[] m_extrinsicIndex;
                     m_extrinsicIndex = new int[m_observationsNo];
 
                     if(m_intrinsicIndex)
-                        delete(m_intrinsicIndex);
+                        delete[] m_intrinsicIndex;
                     m_intrinsicIndex = new int[m_observationsNo];
 
 
