@@ -327,7 +327,7 @@ namespace SolAR {
                    }
 
                     if(m_fixedExtrinsics){
-                       for (int i = 0; i < m_camerasNo; ++i)
+                       for (int i = 0; i < num_observations(); ++i)
                           m_problem.SetParameterBlockConstant(mutable_extrinsic_for_observation(i));
                     }else if(m_holdFirstPose){
                           m_problem.SetParameterBlockConstant(mutable_extrinsic_for_observation(0));
