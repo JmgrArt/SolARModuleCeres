@@ -343,7 +343,7 @@ namespace SolAR {
 
                     ceres::Solve(m_options, &m_problem, &m_summary);
                     std::cout << m_summary.FullReport() << "\n";
-                    return ((double)m_summary.final_cost/(double)m_pointsNo);
+                    return ((double)m_summary.final_cost/(double)m_observationsNo);
                 }
 
 
