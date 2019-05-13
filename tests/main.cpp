@@ -449,7 +449,17 @@ int run_bundle(std::string & scene){
         poses.push_back(tt);
     }
 
-   cloud = ba->m_points3d;
+   // copy input cloud for display purpose
+   for (auto c:ba->m_points3d) {
+         double reprj_err = c->getReprojError();
+         std::map<unsigned int, unsigned int>visibility = c->getVisibility();
+         double x = c->getX();
+         double y = c->getY();
+         double z = c->getZ();
+         cloud.push_back(xpcf::utils::make_shared<CloudPoint>(x, y, z,0.0,0.0,0.0,reprj_err,visibility));
+    }
+
+
    double reproj_errorFinal  = 0.f;
    reproj_errorFinal = bundler->solve(keyframes,
                                       ba->m_points3d,
